@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard Peta Sebaran Sarana Realtime</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- MapLibre GL JS & CSS -->
+  <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
+  <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+
+  <style>
+    html, body { height: 100%; margin: 0; padding: 0; }
+    #map { height: 100%; width: 100%; min-height: 400px; background-color: #0f172a; }
+    .maplibregl-popup-content {
+      background-color: #1e293b !important;
+      color: #f8fafc !important;
+      border: 1px solid #475569;
+      border-radius: 8px;
+      padding: 12px;
+      max-width: 280px;
+    }
+    .maplibregl-popup-anchor-top .maplibregl-popup-tip { border-bottom-color: #1e293b !important; }
+    .maplibregl-popup-anchor-bottom .maplibregl-popup-tip { border-top-color: #1e293b !important; }
+    .maplibregl-popup-anchor-left .maplibregl-popup-tip { border-right-color: #1e293b !important; }
+    .maplibregl-popup-anchor-right .maplibregl-popup-tip { border-left-color: #1e293b !important; }
+  </style>
+</head>
+<body class="bg-slate-900 text-slate-100 font-sans h-screen flex flex-col overflow-hidden">
+
+  <!-- Header / Navbar -->
+  <header class="bg-slate-800 border-b border-slate-700 px-6 py-4 flex flex-col md:flex-row justify-between items-center gap-4 z-10 shadow-lg shrink-0">
+    <div>
+      <h1 class="text-xl font-bold text-white flex items-center gap-2">
+        <svg class="w-6 h-6 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l5.447 2.724A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"></path>
+        </svg>
+        Dashboard Sebaran Sarana
+      </h1>
+      <p class="text-xs text-slate-400 mt-0.5" id="syncStatus">Menghubungkan ke Google Sheets...</p>
+    </div>
+    
+    <!-- Filter Controls (Top Header) -->
+    <div class="flex flex-wrap items-center gap-3">
+      <!-- Filter Kabupaten -->
+      <div>
+        <label class="text-xs text-slate-400 block mb-1">Kabupaten/Kota</label>
+        <select id="filterKab" class="bg-slate-700 text-sm text-white rounded-lg px-3 py-1.5 border border-slate-600 focus:outline-none focus:border-emerald-500">
+          <option value="ALL">Semua Wilayah</option>
+          <option value="Surakarta">Surakarta</option>
+          <option value="Sukoharjo">Sukoharjo</option>
+          <option value="Wonogiri">Wonogiri</option>
+          <option value="Sragen">Sragen</option>
+          <option value="Karanganyar">Karanganyar</option>
+        </select>
+      </div>
+
+      <!-- Filter Jenis Sarana -->
+      <div>
+        <label class="text-xs text-slate-400 block mb-1">Jenis Sarana</label>
+        <select id="filterJenis" class="bg-slate-700 text-sm text-white rounded-lg px-3 py-1.5 border border-slate-600 focus:outline-none focus:border-emerald-500">
+          <option value="ALL">Semua Jenis Sarana</option>
+          <option value="Apotek">Apotek</option>
+          <option value="Toko Obat">Toko Obat</option>
+          <option value="PBF">PBF / Distributor</option>
+          <option value="Rumah Sakit">Rumah Sakit</option>
+          <option value="Puskesmas">Puskesmas</option>
+          <option value="Klinik">Klinik</option>
+        </select>
+      </div>
+
+      <!-- Filter Tindak Lanjut -->
+      <div>
+        <label class="text-xs text-slate-400 block mb-1">Tindak Lanjut</label>
+        <select id="filterTL" class="bg-slate-700 text-sm text-white rounded-lg px-3 py-1.5 border border-slate-600 focus:outline-none focus:border-emerald-500">
+          <option value="ALL">Semua Hasil</option>
+          <option value="Pembinaan">Pembinaan</option>
+          <option value="Peringatan">Peringatan</option>
+          <option value="Peringatan Keras">Peringatan Keras</option>
+          <option value="PSK">Penghentian Sementara Kegiatan</option>
+          <option value="Tindak Lanjut Hasil Pemeriksaan">Tindak Lanjut Hasil Pemeriksaan</option>
+          <option value="Belum Diisi">Belum Diisi</option>
+        </select>
+      </div>
+
+      <button onclick="fetchSheetData()" class="mt-4 md:mt-0 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-3 py-2 rounded-lg transition border border-emerald-400/30">
+        Sync Data
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Content Area -->
+  <div class="flex-1 flex flex-col md:flex-row overflow-hidden relative">
+    
+    <!-- Sidebar List -->
+    <aside class="w-full md:w-96 bg-slate-800 border-r border-slate-700 flex flex-col z-10 shadow-xl h-80 md:h-full">
+      <div class="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-800/80 backdrop-blur shrink-0">
+        <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Daftar Sarana</span>
+        <span id="facilityCount" class="text-xs bg-emerald-500/20 text-emerald-400 font-bold px-2.5 py-0.5 rounded-full border border-emerald-500/30">0 Sarana</span>
+      </div>
+
+      <!-- FILTER PENCARIAN & RANGE TANGGAL -->
+      <div class="p-3 border-b border-slate-700/80 bg-slate-800/50 shrink-0 space-y-2.5">
+        <!-- Input Pencarian Nama/Alamat/Kesimpulan -->
+        <div class="relative">
+          <input 
+            type="text" 
+            id="sidebarSearchInput" 
+            placeholder="Cari nama sarana / alamat / kesimpulan..." 
+            class="w-full bg-slate-700/80 text-xs text-white rounded-lg pl-8 pr-3 py-2 border border-slate-600 focus:outline-none focus:border-emerald-500 placeholder-slate-400 transition"
+          />
+          <svg class="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+          </svg>
+        </div>
+
+        <!-- Filter Range Tanggal Pelaksanaan -->
+        <div class="bg-slate-900/60 p-2.5 rounded-lg border border-slate-700/80 space-y-2">
+          <div class="flex justify-between items-center">
+            <span class="text-[11px] font-semibold text-slate-300 flex items-center gap-1.5">
+              <svg class="w-3.5 h-3.5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+              </svg>
+              Tanggal Pelaksanaan
+            </span>
+            <button onclick="resetDateFilter()" class="text-[10px] text-emerald-400 hover:text-emerald-300 underline">
+              Reset Tanggal
+            </button>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="text-[10px] text-slate-400 block mb-0.5">Dari:</label>
+              <input 
+                type="date" 
+                id="startDate" 
+                class="w-full bg-slate-700 text-[11px] text-white rounded px-2 py-1 border border-slate-600 focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+            <div>
+              <label class="text-[10px] text-slate-400 block mb-0.5">Sampai:</label>
+              <input 
+                type="date" 
+                id="endDate" 
+                class="w-full bg-slate-700 text-[11px] text-white rounded px-2 py-1 border border-slate-600 focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Container Kartu Sarana -->
+      <div id="facilityList" class="flex-1 overflow-y-auto p-3 space-y-2.5">
+        <!-- Rendered via JS -->
+      </div>
+    </aside>
+
+    <!-- Map View -->
+    <main class="flex-1 relative bg-slate-950 h-full">
+      <div id="map"></div>
+      
+      <!-- Status Legend Container -->
+      <div class="absolute bottom-6 right-6 bg-slate-800/90 backdrop-blur border border-slate-700 p-3.5 rounded-xl shadow-2xl z-[1000] text-xs space-y-2">
+        <div class="font-bold text-slate-300 border-b border-slate-700 pb-1 mb-1">Status Tindak Lanjut</div>
+        <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-emerald-500 inline-block"></span> Pembinaan</div>
+        <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-sky-400 inline-block"></span> Peringatan </div>
+        <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-amber-500 inline-block"></span> Peringatan Keras </div>
+        <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-rose-600 inline-block"></span> PSK </div>
+        <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-purple-500 inline-block"></span> TL Hasil Pemeriksaan</div>
+        <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-slate-500 inline-block"></span> Belum Diisi</div>
+      </div>
+    </main>
+
+  </div>
+
+  <script>
+    const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxoRsrgk4HlmtdFmKwctrsRM3rnTc76p5M4mkXAJwAB34yOg4IpO0i6NxmCy5lhR1lk/exec';
+
+    let saranaData = [];
+    let map;
+    let currentMarkers = [];
+
+    function escapeHtml(str) {
+      if (str === null || str === undefined) return '';
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    function parseDateStr(input) {
+      if (!input) return null;
+      if (input instanceof Date) return isNaN(input.getTime()) ? null : input;
+
+      const str = String(input).trim();
+      const ddmmyyyy = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+      if (ddmmyyyy) {
+        const d = new Date(ddmmyyyy[3], ddmmyyyy[2] - 1, ddmmyyyy[1]);
+        if (!isNaN(d.getTime())) return d;
+      }
+
+      const d = new Date(str);
+      return isNaN(d.getTime()) ? null : d;
+    }
+
+    function formatDate(dateString) {
+      const date = parseDateStr(dateString);
+      if (!date) return dateString || '-';
+      return date.toLocaleDateString('id-ID', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric'
+      });
+    }
+
+    document.addEventListener("DOMContentLoaded", function () {
+      map = new maplibregl.Map({
+        container: 'map',
+        style: 'https://tiles.openfreemap.org/styles/positron',
+        center: [110.8229, -7.5666],
+        zoom: 10
+      });
+
+      map.addControl(new maplibregl.NavigationControl());
+
+      map.on('load', () => {
+        fetchSheetData();
+      });
+
+      document.getElementById('filterKab').addEventListener('change', renderDashboard);
+      document.getElementById('filterJenis').addEventListener('change', renderDashboard);
+      document.getElementById('filterTL').addEventListener('change', renderDashboard);
+      document.getElementById('sidebarSearchInput').addEventListener('input', renderDashboard);
+      document.getElementById('startDate').addEventListener('change', renderDashboard);
+      document.getElementById('endDate').addEventListener('change', renderDashboard);
+    });
+
+    function resetDateFilter() {
+      document.getElementById('startDate').value = '';
+      document.getElementById('endDate').value = '';
+      renderDashboard();
+    }
+
+    async function fetchSheetData() {
+      const statusEl = document.getElementById('syncStatus');
+      statusEl.innerText = "Mengambil data terbaru dari Apps Script...";
+
+      try {
+        const response = await fetch(APPS_SCRIPT_URL);
+        if (!response.ok) throw new Error(`HTTP Error Status: ${response.status}`);
+
+        const result = await response.json();
+        if (result.status !== "success") throw new Error(result.message || "Gagal memuat data");
+
+        const coordsKab = {
+          "Surakarta": { lat: -7.5666, lng: 110.8229 },
+          "Sukoharjo": { lat: -7.6821, lng: 110.8382 },
+          "Wonogiri": { lat: -7.8182, lng: 111.0512 },
+          "Sragen": { lat: -7.4281, lng: 111.0182 },
+          "Karanganyar": { lat: -7.5982, lng: 110.9512 }
+        };
+
+        saranaData = result.data
+          .map(item => {
+            const namaSarana = item.nama || item.Nama || item.NAMA || item.namaSarana || item['Nama Sarana'] || item['nama_sarana'] || '';
+            const alamatSarana = item.alamat || item.Alamat || item.ALAMAT || item['Alamat Sarana'] || item.alamatSarana || '';
+            const jenisSarana = item.jenis || item.Jenis || item.JENIS || item['Jenis Sarana'] || item.jenisSarana || 'Lainnya';
+            
+            const kab = item.kab || item.Kab || item.KAB || item.kabupaten || item.Kabupaten || "Surakarta";
+            const baseCoord = coordsKab[kab] || coordsKab["Surakarta"];
+
+            let lat = parseFloat(item.lat || item.Lat || item.LAT || item.latitude);
+            let lng = parseFloat(item.lng || item.Lng || item.LNG || item.long || item.Long || item.longitude);
+
+            if (isNaN(lat) || isNaN(lng)) {
+              lat = baseCoord.lat + (Math.random() - 0.5) * 0.03;
+              lng = baseCoord.lng + (Math.random() - 0.5) * 0.03;
+            }
+
+            const rawTl = item.tl || item.TL || item.tindakLanjut || item.tindak_lanjut || item.status || '';
+            const tindakLanjut = rawTl.toString().trim() === '' ? 'Belum Diisi' : rawTl.toString().trim();
+            
+            const kesimpulanVal = item.kesimpulan || item.Kesimpulan || item.KESIMPULAN || item.catatan || item.Catatan || '-';
+
+            return {
+              nama: namaSarana.trim(),
+              alamat: alamatSarana.trim() !== '' ? alamatSarana : 'Alamat tidak tersedia',
+              kab: kab,
+              jenis: jenisSarana,
+              tl: tindakLanjut,
+              kesimpulan: kesimpulanVal,
+              tanggal: item.tanggal || item.Tanggal || item.TANGGAL || item.tanggalPelaksanaan || item.tgl || "",
+              lat: lat,
+              lng: lng
+            };
+          })
+          // Buang baris yang tidak memiliki nama valid (baris kosong di sheet)
+          .filter(item => {
+            const n = item.nama.toLowerCase();
+            return n !== '' && n !== '-' && n !== 'tanpa nama' && n !== 'undefined' && n !== 'null';
+          });
+
+        statusEl.innerText = `Terhubung langsung ke API (${saranaData.length} sarana dimuat)`;
+        
+        updateJenisDropdown();
+        updateTlDropdown();
+        
+        renderDashboard();
+      } catch (err) {
+        console.error("Gagal sinkronisasi data:", err);
+        statusEl.innerText = "Gagal mengambil data. Pastikan Web App Apps Script sudah di-deploy ke 'Anyone'.";
+      }
+    }
+
+    function updateJenisDropdown() {
+      const selectJenis = document.getElementById('filterJenis');
+      const currentValue = selectJenis.value;
+
+      const jenisSet = new Set();
+      saranaData.forEach(item => {
+        if (item.jenis && item.jenis.trim() !== '') {
+          jenisSet.add(item.jenis.trim());
+        }
+      });
+
+      if (jenisSet.size > 0) {
+        const sortedJenis = Array.from(jenisSet).sort();
+        selectJenis.innerHTML = '<option value="ALL">Semua Jenis Sarana</option>';
+        sortedJenis.forEach(jenis => {
+          const option = document.createElement('option');
+          option.value = jenis;
+          option.textContent = jenis;
+          selectJenis.appendChild(option);
+        });
+
+        if (Array.from(selectJenis.options).some(opt => opt.value === currentValue)) {
+          selectJenis.value = currentValue;
+        }
+      }
+    }
+
+    function updateTlDropdown() {
+      const selectTL = document.getElementById('filterTL');
+      const currentValue = selectTL.value;
+
+      const tlSet = new Set();
+      saranaData.forEach(item => {
+        if (item.tl && item.tl.trim() !== '') {
+          tlSet.add(item.tl.trim());
+        }
+      });
+
+      if (tlSet.size > 0) {
+        const sortedTL = Array.from(tlSet).sort();
+        selectTL.innerHTML = '<option value="ALL">Semua Hasil</option>';
+        sortedTL.forEach(tl => {
+          const option = document.createElement('option');
+          option.value = tl;
+          option.textContent = tl;
+          selectTL.appendChild(option);
+        });
+
+        if (Array.from(selectTL.options).some(opt => opt.value === currentValue)) {
+          selectTL.value = currentValue;
+        }
+      }
+    }
+
+    // Pemetaan Warna Status Tindak Lanjut
+    function getStatusColor(tl) {
+      if (!tl || tl === 'Belum Diisi') return "#64748b"; // Abu-abu untuk data kosong
+      const tLower = tl.toLowerCase();
+      if (tLower.includes("psk") || tLower.includes("penghentian")) return "#e11d48"; // Merah
+      if (tLower.includes("keras")) return "#f59e0b"; // Oranye / Kuning Amber
+      if (tLower.includes("tindak lanjut") || tLower.includes("hasil pemeriksaan")) return "#8b5cf6"; // Ungu untuk TL Hasil Pemeriksaan
+      if (tLower.includes("pembinaan")) return "#10b981"; // Hijau
+      return "#38bdf8"; // Biru untuk Peringatan murni
+    }
+
+    function renderDashboard() {
+      const selectedKab = document.getElementById('filterKab').value;
+      const selectedJenis = document.getElementById('filterJenis').value;
+      const selectedTL = document.getElementById('filterTL').value;
+      const searchQuery = document.getElementById('sidebarSearchInput').value.toLowerCase().trim();
+      
+      const startDateVal = document.getElementById('startDate').value;
+      const endDateVal = document.getElementById('endDate').value;
+
+      currentMarkers.forEach(m => m.remove());
+      currentMarkers = [];
+
+      const listContainer = document.getElementById('facilityList');
+      listContainer.innerHTML = '';
+
+      const filtered = saranaData.filter(item => {
+        const matchKab = selectedKab === 'ALL' || item.kab === selectedKab;
+        const matchJenis = selectedJenis === 'ALL' || item.jenis.toLowerCase().includes(selectedJenis.toLowerCase());
+
+        // Logika Filter Tindak Lanjut yang Presisi
+        let matchTL = false;
+        if (selectedTL === 'ALL') {
+          matchTL = true;
+        } else if (selectedTL === 'Belum Diisi') {
+          matchTL = item.tl === 'Belum Diisi';
+        } else if (selectedTL === 'Peringatan') {
+          matchTL = item.tl.toLowerCase().includes('peringatan') && !item.tl.toLowerCase().includes('keras');
+        } else {
+          matchTL = item.tl.toLowerCase().includes(selectedTL.toLowerCase());
+        }
+
+        const matchSearch = searchQuery === '' || 
+          (item.nama && item.nama.toLowerCase().includes(searchQuery)) || 
+          (item.alamat && item.alamat.toLowerCase().includes(searchQuery)) ||
+          (item.kesimpulan && item.kesimpulan.toLowerCase().includes(searchQuery));
+
+        const itemDate = parseDateStr(item.tanggal);
+        const startDate = parseDateStr(startDateVal);
+        const endDate = parseDateStr(endDateVal);
+
+        if (startDate) startDate.setHours(0, 0, 0, 0);
+        if (endDate) endDate.setHours(23, 59, 59, 999);
+
+        const matchStartDate = !startDate || (itemDate && itemDate >= startDate);
+        const matchEndDate = !endDate || (itemDate && itemDate <= endDate);
+
+        return matchKab && matchJenis && matchTL && matchSearch && matchStartDate && matchEndDate;
+      });
+
+      document.getElementById('facilityCount').innerText = `${filtered.length} Sarana`;
+
+      if (filtered.length === 0) {
+        listContainer.innerHTML = `
+          <div class="text-center py-8 text-slate-500 text-xs">
+            Tidak ada sarana yang sesuai dengan pencarian / filter yang dipilih.
+          </div>
+        `;
+        return;
+      }
+
+      const bounds = new maplibregl.LngLatBounds();
+
+      filtered.forEach((item) => {
+        const color = getStatusColor(item.tl);
+
+        const el = document.createElement('div');
+        el.style.backgroundColor = color;
+        el.style.width = '16px';
+        el.style.height = '16px';
+        el.style.borderRadius = '50%';
+        el.style.border = '2px solid white';
+        el.style.boxShadow = '0 0 8px rgba(0,0,0,0.5)';
+        el.style.cursor = 'pointer';
+
+        const popupContent = `
+          <div style="font-family: sans-serif; font-size: 12px; color: #f8fafc;">
+            <span style="font-weight: bold; color: #94a3b8; font-size: 10px; text-transform: uppercase;">${escapeHtml(item.jenis)} - ${escapeHtml(item.kab)}</span>
+            <h3 style="font-weight: bold; font-size: 14px; margin: 2px 0; color: #ffffff;">${escapeHtml(item.nama)}</h3>
+            <p style="margin: 4px 0; color: #cbd5e1;">${escapeHtml(item.alamat)}</p>
+            <p style="margin: 4px 0; color: #38bdf8; font-size: 11px;">📅 Tgl: ${formatDate(item.tanggal)}</p>
+            <div style="margin: 6px 0; padding: 6px; background-color: #0f172a; border-radius: 4px; border-left: 3px solid #38bdf8;">
+              <span style="display: block; font-size: 10px; color: #94a3b8; font-weight: bold;">KESIMPULAN:</span>
+              <p style="margin: 2px 0 0 0; color: #e2e8f0; font-size: 11px;">${escapeHtml(item.kesimpulan)}</p>
+            </div>
+            <div style="margin-top: 6px; padding: 2px 6px; border-radius: 4px; display: inline-block; font-weight: bold; background-color: ${color}33; color: ${color}; border: 1px solid ${color};">
+              ${escapeHtml(item.tl)}
+            </div>
+          </div>
+        `;
+
+        const popup = new maplibregl.Popup({ offset: 12 }).setHTML(popupContent);
+
+        const marker = new maplibregl.Marker({ element: el })
+          .setLngLat([item.lng, item.lat])
+          .setPopup(popup)
+          .addTo(map);
+
+        currentMarkers.push(marker);
+        bounds.extend([item.lng, item.lat]);
+
+        const card = document.createElement('div');
+        card.className = "bg-slate-700/50 hover:bg-slate-700 border border-slate-600/50 p-3 rounded-lg cursor-pointer transition duration-150 ease-in-out space-y-2";
+        card.innerHTML = `
+          <div class="flex items-start justify-between gap-2">
+            <h4 class="font-semibold text-sm text-white leading-snug">${escapeHtml(item.nama)}</h4>
+            <span class="text-[10px] px-2 py-0.5 rounded font-medium shrink-0" style="background-color: ${color}22; color: ${color}; border: 1px solid ${color}44">
+              ${escapeHtml(item.tl)}
+            </span>
+          </div>
+          <p class="text-xs text-slate-400 line-clamp-2">${escapeHtml(item.alamat)}</p>
+          
+          <div class="bg-slate-800/80 p-2 rounded border border-slate-600/40 text-[11px]">
+            <span class="text-[10px] text-slate-400 font-semibold block uppercase tracking-wider mb-0.5">Kesimpulan:</span>
+            <p class="text-slate-200 line-clamp-2">${escapeHtml(item.kesimpulan)}</p>
+          </div>
+
+          <div class="flex items-center justify-between text-[11px] text-slate-400 border-t border-slate-600/40 pt-1.5">
+            <span>Jenis: <strong class="text-slate-300">${escapeHtml(item.jenis)}</strong></span>
+            <span class="text-emerald-400 font-medium">📅 ${formatDate(item.tanggal)}</span>
+          </div>
+        `;
+
+        card.addEventListener('click', () => {
+          map.flyTo({ center: [item.lng, item.lat], zoom: 15, duration: 1200 });
+          marker.togglePopup();
+        });
+
+        listContainer.appendChild(card);
+      });
+
+      if (filtered.length === 1) {
+        map.flyTo({ center: [filtered[0].lng, filtered[0].lat], zoom: 15, duration: 1000 });
+      } else if (filtered.length > 1) {
+        map.fitBounds(bounds, { padding: 40, maxZoom: 14 });
+      }
+    }
+  </script>
+</body>
+</html>
